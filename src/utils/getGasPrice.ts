@@ -54,36 +54,38 @@ export const MIN_MATIC_GAS_PRICE = parseGwei(30)
 
 export async function getGasPrice(options: GasPriceOptions) {
   let gasPrice: BigNumberish;
-  const req = await fetch(`https://polygonscan.com/gastracker`);
-  const prices: PricesData = await req.json();
-  const safeLowGasPrice = parseGwei(fromSpeed(prices, 'safeLow'))
-  if (options.speed) {
-    gasPrice = parseGwei(fromSpeed(prices, options.speed));
-  } else {
-    gasPrice = await provider.getGasPrice();
-  }
 
-  if (options.minGasPrice) {
-    const minGasPrice = parseGwei(options.minGasPrice);
-    if (gasPrice.lt(minGasPrice)) {
-      gasPrice = minGasPrice;
-    }
+  // Fetching data from the API
+  const req = await fetch(`https://api.polygonscan.com/api?module=gastracker&action=gasoracle&apikey=YourApiKeyToken`);
+  const data = await req.json(); // Using the provided API response structure
+  
+  if (!data || data.status !== "1") {
+    throw new Error("Failed to fetch gas prices");
   }
+  
+  // Assuming suggestBaseFee as the base fee and calculating maxFee based on gas price suggestions
+  const prices: PricesData = {
+    safeLow: {
+      maxPriorityFee: parseFloat(data.result.SafeGasPrice),
+      maxFee: parseFloat(data.result.SafeGasPrice) + parseFloat(data.result.suggestBaseFee),
+    },
+    standard: {
+      maxPriorityFee: parseFloat(data.result.ProposeGasPrice),
+      maxFee: parseFloat(data.result.ProposeGasPrice) + parseFloat(data.result.suggestBaseFee),
+    },
+    fast: {
+      maxPriorityFee: parseFloat(data.result.FastGasPrice),
+      maxFee: parseFloat(data.result.FastGasPrice) + parseFloat(data.result.suggestBaseFee),
+    },
+    estimatedBaseFee: parseFloat(data.result.suggestBaseFee),
+    blockTime: 0, // Placeholder if not available in response
+    blockNumber: parseInt(data.result.LastBlock),
+  };
 
-  if (options.maxGasPrice) {
-    const maxGasPrice = parseGwei(options.maxGasPrice);
-    if (gasPrice.gt(maxGasPrice)) {
-      gasPrice = maxGasPrice;
-    }
-  }
+  
+  const selectedSpeed = options.speed || 'standard'; // Default to 'standard' if not specified
+  gasPrice = parseGwei(fromSpeed(prices, selectedSpeed));
 
-  if (gasPrice.lt(MIN_MATIC_GAS_PRICE)) {
-    throw new Error(`Gas price is lower than the network minimun: 30gewi.\nRead more here: https://forum.matic.network/t/recommended-min-gas-price-setting/2531`)
-  }
-
-  if (gasPrice.lt(safeLowGasPrice)) {
-    throw new Error(`Gas price is lower than the network safe value: ${prices.safeLow}gewi`)
-  }
 
   return gasPrice;
 }
